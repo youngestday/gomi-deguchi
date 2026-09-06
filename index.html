@@ -174,7 +174,10 @@ a.row:hover { background:#faf9f5; }
     <button type="button" class="chrome-print" id="printBtn">この1枚を印刷</button>
     <span class="chrome-hint">A4・たて・1ページ／画面では行をクリックすると開きます</span>
   </div>
-  印刷を開始できませんでした。ブラウザのメニューから印刷（Windowsは Ctrl+P、Macは ⌘+P）をお試しください。用紙は<b>A4・たて</b>、余白は<b>「既定」のまま</b>にしてください。
+  <p class="chrome-help" id="printHelp" hidden>
+    印刷を開始できませんでした。ブラウザのメニューから印刷（Windowsは Ctrl+P、Macは Command+P）をお試しください。
+    用紙は<b>A4・たて</b>、余白は<b>「既定」のまま</b>にしてください。<span id="printHelpNote"></span>
+  </p>
 </div>
 
 <section class="sheet">
@@ -721,10 +724,20 @@ function statusBlock(m) {
   box.open = false;   // 市を切り替えるたびに畳む。画面をふさがないため
 }
 
-// 公開ビルドでは、社内向けの表示（下書きバッジ・確認メモ）を出さない
-if (DB.meta && DB.meta.public) {
-  document.querySelector('.chrome-draft').remove();
-  document.getElementById('status').remove();
+// 公開ビルドでは、社内向けの表示（下書きバッジ・確認メモ）を出さない。
+// 要素が無い場合もあるので、必ず存在を確かめてから消すこと（ここで落ちると以降が全部止まる）
+const isPublic = !!(DB.meta && DB.meta.public);
+if (isPublic) {
+  const draft = document.querySelector('.chrome-draft');
+  if (draft) draft.remove();
+  const st = document.getElementById('status');
+  if (st) st.remove();
+} else {
+  const note = document.getElementById('printHelpNote');
+  if (note) {
+    note.innerHTML = '<br>Artifactの画面では、保護された枠の中で動くため印刷の呼び出しが無視されます。'
+      + '配布用のHTMLファイルか公開URLを開いてください。';
+  }
 }
 
 sel.addEventListener('change', function () { render(sel.value); });

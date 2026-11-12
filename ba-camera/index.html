@@ -38,7 +38,7 @@ body {
 /* ステージ */
 .stage { position: relative; container-type: size; min-width: 0; min-height: 0; display: grid; place-items: center; padding: 8px; }
 .pair {
-  width: min(100cqw, 150cqh); aspect-ratio: 3 / 2; max-width: 100%;
+  width: min(100cqw, 112.5cqh); aspect-ratio: 9 / 8; max-width: 100%;
   display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
 }
 .pane { position: relative; overflow: hidden; background: var(--panel); border-radius: 4px; }
@@ -168,7 +168,7 @@ button.primary { background: var(--accent); color: #111; border-color: var(--acc
   const $ = (id) => document.getElementById(id);
   const video = $('video');
   const MAX_H = 2400;          // 1枚あたりの最大の高さ(px)。iPhoneのメモリ上限に余裕を持たせる
-  const AR = 3 / 4;            // 縦長 3:4
+  const AR = 9 / 16;           // 縦長 9:16（標準カメラの16:9と同じ）
 
   const store = {
     get(k, d) { try { const v = localStorage.getItem('bacam.' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
@@ -239,8 +239,17 @@ button.primary { background: var(--accent); color: #111; border-color: var(--acc
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error(location.protocol === 'https:' ? 'このブラウザはカメラに対応していません' : 'https のページで開いてください');
       }
+      // 前回使ったレンズのIDで直接開き、カメラの起動を1回で済ませる（起動のたびにブラウザの通知が出るため）
       const want = cams.find(c => c.key === lensKey);
-      await open(want ? { deviceId: { exact: want.id } } : { facingMode: { ideal: 'environment' } });
+      const savedId = store.get('camId', null);
+      if (want) await open({ deviceId: { exact: want.id } });
+      else if (savedId) {
+        try { await open({ deviceId: { exact: savedId } }); }
+        catch (e) {
+          if (e.name === 'NotAllowedError' || e.name === 'SecurityError') throw e;
+          await open({ facingMode: { ideal: 'environment' } });
+        }
+      } else await open({ facingMode: { ideal: 'environment' } });
       if (!cams.length) {
         cams = await listCams();
         const cur = stream.getVideoTracks()[0]?.getSettings().deviceId;
@@ -248,12 +257,13 @@ button.primary { background: var(--accent); color: #111; border-color: var(--acc
         if (pref && pref.id !== cur) await open({ deviceId: { exact: pref.id } });
         if (pref) lensKey = pref.key;
       }
+      store.set('camId', (cams.find(c => c.key === lensKey) || {}).id || stream.getVideoTracks()[0]?.getSettings().deviceId || null);
       renderLens();
     })().catch(err => {
       stopCamera();
       const denied = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
       showCamError(denied
-        ? 'カメラの使用が許可されていません。Safariの「ぁあ」→「Webサイトの設定」→カメラを「許可」にしてください。'
+        ? 'カメラの使用が許可されていません。Chromeはアドレスバー左のアイコン、Safariは「ぁあ」→「Webサイトの設定」から、カメラを「許可」にしてください。'
         : 'カメラを起動できませんでした（' + (err.message || err.name) + '）');
     }).finally(() => { starting = null; });
     return starting;
@@ -378,8 +388,8 @@ button.primary { background: var(--accent); color: #111; border-color: var(--acc
 
   async function go(next) {
     state = next; clearCamError(); render();
-    if (next === 'result') stopCamera();
-    else if (!stream) await startCamera();
+    // 完成画面でもカメラは止めない（撮り直しのたびにカメラを起動し直さないため）
+    if (next !== 'result' && !cameraAlive()) await startCamera();
   }
 
   async function setBefore(canvas) {
@@ -442,9 +452,14 @@ button.primary { background: var(--accent); color: #111; border-color: var(--acc
     msg('保存できない場合は、画像を長押しして「"写真"に保存」を選んでください', 6000);
   };
 
+  function cameraAlive() {
+    const t = stream && stream.getVideoTracks()[0];
+    return !!t && t.readyState === 'live';
+  }
+  // アプリに戻ったとき、カメラが止められていた場合だけ起動し直す
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) stopCamera();
-    else if (state !== 'result') startCamera();
+    if (!document.hidden && state !== 'result' && !cameraAlive()) startCamera();
+    if (!document.hidden) video.play().catch(() => {});
   });
 
   try { navigator.wakeLock?.request('screen').catch(() => {}); } catch {}
